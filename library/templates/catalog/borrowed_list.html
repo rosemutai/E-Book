@@ -1,0 +1,26 @@
+{% extends 'catalog/base_generic.html' %}
+
+{% block content %}
+{% if books_borrowed %}
+
+<div class="row">
+    {% for book in books_borrowed %}
+      <div class="col">
+                <div class="card" style="width: 18rem;">
+                    <img class="pImage" src="{{ book.pic.url }}">
+                    <div class="card-body">
+                        <h class="card-title">
+                            <a href="{{ book.get_absolute_url }}" >{{ book.book }}</a></h>
+                        <h5> {{book.user}}</h5>
+                    </div>
+                </div>
+            </div>
+      {% endfor %}
+
+</div>
+
+
+{% else %}
+<p class=" bg bg-white">There are no books.</p>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,17 @@
+{% extends 'catalog/base_generic.html' %}
+{% block content %}
+   <center> <form class="form" id="searchform" action="{% url 'search_m' %}" method="get">
+    <div class="form-group">
+    <input type="text" class="col-5  form-control-lg"  placeholder="enter member ID or name or email" name="q" type="text"/>
+    <button type="button"  class="btn btn-success form-control-lg" onclick="searchform.submit()">Search</button>
+        </div>
+</form>
+   </center>
+    <div class="bg bg-white">
+        {% for m in members %}
+            <ul>
+                <li><a href="{% url 'member_detail' pk=m.id %}">{{ m.member_id }}</a></li>
+            </ul>
+        {% endfor %}
+    </div>
+{% endblock %}

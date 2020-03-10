@@ -1,0 +1,37 @@
+{% extends 'catalog/base_generic.html' %}
+{% block content %}
+<!--<div class=" bg bg-white">-->
+<!--<h1>-->
+<!--{{ message }}-->
+
+<!--</h1>-->
+<!--</div>-->
+{% if books_borrowed %}
+
+<div class="row">
+    {% for book in books_borrowed %}
+    <div class="col">
+        <div class="card" style="width: 18rem;">
+            <img class="pImage" src="{{ book.pic.url }}">
+            <div class="card-body">
+                <h class="card-title">
+                    <a href="{{ book.get_absolute_url }}">{{ book.book }}</a></h>
+                <h5> {{book.user}}</h5>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+
+</div>
+
+
+{% else %}
+<!--<p class=" bg bg-white">There are no books.</p>-->
+<div class="jumbotron">
+    <h1 class="display-4">Hello,  {{ request.user }}!</h1>
+    <p class="lead">Your requested book is availabale for picking. Visit our library to claim it.<br>
+        Happy reading {{request.user}}.</p>
+
+</div>
+{% endif %}
+{% endblock %}

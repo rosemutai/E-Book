@@ -1,0 +1,49 @@
+{% extends "catalog/base_generic.html" %}
+<style>
+   body{
+   background-color: red;
+   }
+    div.card{
+            margin-top: 50px;
+        }
+
+
+</style>
+
+
+{% block content %}
+<center>
+    <form class="form" id="searchform" action="{% url 'search_b' %}" method="get">
+        <div class="form-group">
+            <input type="text" class="col-5  form-control-lg" placeholder="enter book title or something " name="q"
+                   type="text"/>
+            <button type="button" class="btn btn-success form-control-lg" onclick="searchform.submit()">Search</button>
+        </div>
+    </form>
+</center>
+
+
+{% if book_list %}
+
+<div class="row">
+    {% for book in book_list %}
+      <div class="col">
+                <div class="card" style="width: 18rem;">
+                    <img class="pImage" src="{{ book.pic.url }}">
+                    <div class="card-body">
+                        <h class="card-title">
+                            <a href="{{ book.get_absolute_url }}" >{{ book.title }}</a></h>
+                        <h5>Author: {{book.author}}</h5>
+                    </div>
+                </div>
+            </div>
+      {% endfor %}
+
+</div>
+
+
+{% else %}
+<p class=" bg bg-white">There are no books.</p>
+{% endif %}
+{% endblock %}
+

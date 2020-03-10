@@ -1,6 +1,7 @@
 from django.contrib import admin
 
-from .models import Item, OrderItem,OrderNovels,Order, Payment, Coupon, Refund, Address, UserProfile,Novels,Stationery,Sciences,Languages
+from .models import Item, OrderItem,Order,  Coupon, Refund, Address, UserProfile,Novels,Stationery,\
+    Sciences,Languages, Stk, ItemList, ShopApplication, bookshop
 
 
 def make_refund_accepted(modeladmin, request, queryset):
@@ -18,14 +19,14 @@ class OrderAdmin(admin.ModelAdmin):
                     'refund_requested',
                     'refund_granted',
                     'shipping_address',
-                    'billing_address',
+                    # 'billing_address',
                     'payment',
                     'coupon'
                     ]
     list_display_links = [
         'user',
         'shipping_address',
-        'billing_address',
+        # 'billing_address',
         'payment',
         'coupon'
     ]
@@ -46,20 +47,23 @@ class AddressAdmin(admin.ModelAdmin):
         'user',
         'street_address',
         'apartment_address',
-        'country',
-        'zip',
+        # 'country',
+        # 'zip',
         'address_type',
         'default'
     ]
-    list_filter = ['default', 'address_type', 'country']
-    search_fields = ['user', 'street_address', 'apartment_address', 'zip']
+    list_filter = ['default', 'address_type']
+    search_fields = ['user', 'street_address', 'apartment_address']
 
+
+class OrderItemAdmin(admin.ModelAdmin):
+    list_display = ['item', 'total']
+    readonly_fields = ('total',)
 
 admin.site.register(Item)
-admin.site.register(OrderItem)
-admin.site.register(OrderNovels)
+admin.site.register(OrderItem, OrderItemAdmin)
+admin.site.register(Stk)
 admin.site.register(Order, OrderAdmin)
-admin.site.register(Payment)
 admin.site.register(Coupon)
 admin.site.register(Refund)
 admin.site.register(Address, AddressAdmin)
@@ -68,5 +72,8 @@ admin.site.register(Novels)
 admin.site.register(Stationery)
 admin.site.register(Sciences)
 admin.site.register(Languages)
+admin.site.register(ItemList)
+admin.site.register(ShopApplication)
+admin.site.register(bookshop)
 
 

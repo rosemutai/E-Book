@@ -6,18 +6,21 @@ from django.shortcuts import reverse
 from django_countries.fields import CountryField
 
 
+
 CATEGORY_CHOICES = (
     ('P', 'Pens'),
     ('TB', 'Text Books'),
     ('EB', 'Exercise Books'),
-    ('ST', 'Story Books'),
-    ('N', 'Novels')
+    ('SP', 'Sports'),
+    ('N', 'Novels'),
+    ('A', 'Art'),
+    ('OS', 'Other Stationaries')
 )
 
 LABEL_CHOICES = (
     ('P', 'primary'),
     ('S', 'secondary'),
-    ('D', 'danger')
+    ('G', 'general')
 )
 
 ADDRESS_CHOICES = (
@@ -25,12 +28,19 @@ ADDRESS_CHOICES = (
     ('S', 'Shipping'),
 )
 
-
+#
 class UserProfile(models.Model):
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
-    stripe_customer_id = models.CharField(max_length=50, blank=True, null=True)
-    one_click_purchasing = models.BooleanField(default=False)
+
+    email = models.EmailField(null=False)
+
+
+
+
+
+    # stripe_customer_id = models.CharField(max_length=50, blank=True, null=True)
+    # one_click_purchasing = models.BooleanField(default=False)
 
     def __str__(self):
         return self.user.username
@@ -44,7 +54,10 @@ class Item(models.Model):
     label = models.CharField(choices=LABEL_CHOICES, max_length=1)
     slug = models.SlugField()
     description = models.TextField()
-    image = models.ImageField()
+    image = models.ImageField(upload_to='Item_images')
+
+    class Meta:
+        ordering = ['id']
 
     def __str__(self):
         return self.title
@@ -189,7 +202,7 @@ class OrderItem(models.Model):
     quantity = models.IntegerField(default=1)
 
     def __str__(self):
-        return f"{self.quantity} of {self.item.title}"
+        return  '{} {} '.format(self.item, self.quantity)
 
     def get_total_item_price(self):
         return self.quantity * self.item.price
@@ -205,42 +218,24 @@ class OrderItem(models.Model):
             return self.get_total_discount_item_price()
         return self.get_total_item_price()
 
-class OrderNovels(models.Model):
-    user = models.ForeignKey(settings.AUTH_USER_MODEL,
-                             on_delete=models.CASCADE)
-    ordered = models.BooleanField(default=False)
-    novel = models.ForeignKey(Novels, on_delete=models.CASCADE)
-    quantity = models.IntegerField(default=1)
 
-    def __str__(self):
-        return f"{self.quantity} of {self.novel.title}"
+    total = property(get_final_price)
 
-    def get_total_item_price(self):
-        return self.quantity * self.novel.price
 
-    def get_total_discount_item_price(self):
-        return self.quantity * self.novel.discount_price
 
-    def get_amount_saved(self):
-        return self.get_total_item_price() - self.get_total_discount_item_price()
-
-    def get_final_price(self):
-        if self.novel.discount_price:
-            return self.get_total_discount_item_price()
-        return self.get_total_item_price()
 class Order(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL,
                              on_delete=models.CASCADE)
     ref_code = models.CharField(max_length=20, blank=True, null=True)
     items = models.ManyToManyField(OrderItem)
-    # novels = models.ManyToManyField(OrderNovels)
+
     start_date = models.DateTimeField(auto_now_add=True)
     ordered_date = models.DateTimeField()
     ordered = models.BooleanField(default=False)
     shipping_address = models.ForeignKey(
         'Address', related_name='shipping_address', on_delete=models.SET_NULL, blank=True, null=True)
-    billing_address = models.ForeignKey(
-        'Address', related_name='billing_address', on_delete=models.SET_NULL, blank=True, null=True)
+    # billing_address = models.ForeignKey(
+    #     'Address', related_name='billing_address', on_delete=models.SET_NULL, blank=True, null=True)
     payment = models.ForeignKey(
         'Payment', on_delete=models.SET_NULL, blank=True, null=True)
     coupon = models.ForeignKey(
@@ -278,8 +273,8 @@ class Address(models.Model):
                              on_delete=models.CASCADE)
     street_address = models.CharField(max_length=100)
     apartment_address = models.CharField(max_length=100)
-    country = CountryField(multiple=False)
-    zip = models.CharField(max_length=100)
+    # country = CountryField(multiple=False)
+    # zip = models.CharField(max_length=100)
     address_type = models.CharField(max_length=1, choices=ADDRESS_CHOICES)
     default = models.BooleanField(default=False)
 
@@ -292,8 +287,7 @@ class Address(models.Model):
 
 class Payment(models.Model):
     stripe_charge_id = models.CharField(max_length=50)
-    user = models.ForeignKey(settings.AUTH_USER_MODEL,
-                             on_delete=models.SET_NULL, blank=True, null=True)
+
     amount = models.FloatField()
     timestamp = models.DateTimeField(auto_now_add=True)
 
@@ -316,7 +310,7 @@ class Refund(models.Model):
     email = models.EmailField()
 
     def __str__(self):
-        return f"{self.pk}"
+        return self.pk
 
 
 def userprofile_receiver(sender, instance, created, *args, **kwargs):
@@ -325,3 +319,66 @@ def userprofile_receiver(sender, instance, created, *args, **kwargs):
 
 
 post_save.connect(userprofile_receiver, sender=settings.AUTH_USER_MODEL)
+
+
+from django.db import models
+
+class Stk(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL,
+                             on_delete=models.SET_NULL, blank=True, null=True)
+    MerchantRequestID = models.CharField(max_length=250, null=True)
+    CheckoutRequestID = models.CharField(max_length=250, null=True)
+    ResultCode = models.IntegerField(null=True)
+    ResultDesc = models.CharField(max_length=250, null=True)
+    Amount = models.CharField(max_length=250, null=True)
+    MpesaReceiptNumber = models.CharField(max_length=250, null=True)
+    Balance = models.CharField(max_length=250, null=True)
+    TransactionDate = models.CharField(max_length=250, null=True)
+    PhoneNumber = models.CharField(max_length=250, null=True)
+
+    class Meta:
+        ordering = ['TransactionDate']
+
+    def __str__(self):
+        return str(self.CheckoutRequestID)
+
+class ItemList(models.Model):
+    first_name = models.CharField(max_length=100)
+    last_name = models.CharField(max_length=100)
+    phone = models.IntegerField(default='')
+    email = models.EmailField(default='')
+    list_img = models.ImageField(blank=False, upload_to='ListImages' )
+    timestamp = models.DateTimeField(auto_now_add=True)
+    checkout_request_id = models.CharField(max_length=250, default='')
+    transaction_initiated = models.BooleanField(default=False)
+    paid = models.BooleanField(default=False)
+
+    def __str__(self):
+        return self.email
+
+class ItemListContent(models.Model):
+    item = models.ForeignKey(Item, on_delete=models.CASCADE)
+    itemlist = models.ForeignKey(ItemList, on_delete=models.CASCADE)
+    price = models.IntegerField(default=5)
+    quantity = models.IntegerField(default=0)
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+class ShopApplication(models.Model):
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    shopName = models.CharField(max_length=100)
+    description = models.CharField(max_length=250)
+    accept = models.BooleanField(default=False)
+    cancel = models.BooleanField(default=False)
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return (self.shopName)
+
+class bookshop(models.Model):
+    item = models.ForeignKey(Item, on_delete=models.CASCADE)
+    shop = models.ForeignKey(ShopApplication, on_delete=models.CASCADE)
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return (self.shop)

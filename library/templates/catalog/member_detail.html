@@ -1,0 +1,69 @@
+{% extends 'catalog/base_generic.html' %}
+{% block style %}
+    .product-title,  .product-description, .price, .vote, .sizes {
+    margin-bottom: 15px; }
+{% endblock %}
+{% block content %}
+    <div class="container bg bg-white">
+
+    <div class="container-fliud">
+    <div class="wrapper row">
+        <div class="preview col-6">
+
+            <div class="preview-pic tab-content">
+                <div class="tab-pane active  my-auto mx-auto" id="pic-1"><img
+                        src="{{ member.pic.url }}"/>
+                </div>
+            </div>
+
+
+        </div>
+        <div class="details col-6">
+            <h4>Name: {{ member.first_name }} {{ member.last_name }}</h4>
+            <!--<p><strong>ID:</strong>{{ member.member_id }}</p>-->
+            <p><strong>Contact:</strong> {{ member.contact_no }}</p>
+            <p><strong>Location:</strong> {{ member.location }}</p>
+
+
+            {% if user.is_superuser %}
+
+            <p><strong>Books due:</strong> {{ member.total_books_due }}</p>
+            <p>Fine Due: {{ member.getFine }}</p>
+                <a class="btn btn-danger" href="{% url 'member_delete' pk=member.id %}">DELETE</a>
+                <a class="btn btn-success" href="{% url 'member_update' pk=member.id %}">Update</a>
+
+            {% endif %}
+
+
+        </div>
+        <hr>
+    </div>
+    <hr>
+    <hr>
+ {% if user.is_superuser %}
+    {% if books %}
+
+        <div class="row mx-auto">
+            {% for book in books %}
+
+
+                <div class="mx-3 col-md-4 col-lg-3 mb-4 shadow p-2 mb-4 bg-white rounded">
+                    <div class="card mx-auto text-center ">
+                        <img class="card-img-top" src="{{ book.book.pic.url }}" alt="Sample Title" width="400px"
+                             height="400px">
+                        <div class="card-body">
+                            <h2 class="card-title"><a href="{{ book.book.get_absolute_url }}">{{ book.title }}</a>
+                                ({{ book.author }})</h2>
+                            <a class="btn btn-success" href="{% url 'ret' pk=book.id %}">Return</a>
+                        </div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+
+    {% else %}
+        <p>There are no books borrowed.</p>
+    {% endif %}
+
+{% endif %}
+{% endblock %}

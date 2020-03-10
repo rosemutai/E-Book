@@ -5,16 +5,149 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.shortcuts import render, get_object_or_404
 from django.views.generic import ListView, DetailView, View
+from requests.auth import HTTPBasicAuth
+from django.core.mail import send_mail
+from django.views.decorators.http import require_POST
+from base64 import b64decode, b64encode
+from datetime import datetime, timedelta, date
+from django.utils import timezone
+import requests
+import json
+from django.views.decorators.csrf import csrf_exempt
 from django.shortcuts import redirect
 from django.utils import timezone
 from .forms import CheckoutForm, CouponForm, RefundForm, PaymentForm
-from .models import Item, Novels,Stationery,Languages,Sciences,OrderItem,OrderNovels, Order, Address, Payment, Coupon, Refund, UserProfile
-from django.http import HttpResponse
+from .models import Item,OrderItem, Order, Address, Coupon, Refund, UserProfile,Stk, ItemList, ShopApplication
+from django.http import HttpResponse, JsonResponse
+from django.db.models import Q
+from django.contrib.auth.models import User
+import re
+
 
 import random
 import string
-import stripe
-stripe.api_key = settings.STRIPE_SECRET_KEY
+
+@csrf_exempt
+def MpesaAccessToken(request):
+    """
+    Function to generate token from the consumer secret and key
+    """
+    consumer_key = 'GqetbWYIslmgK5nXdBUxYLQT9vK2glYm'
+    consumer_secret = 'HY3n8GKkLeAckqqj'
+    api_URL = 'https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials'
+
+    r = requests.get(api_URL, auth=HTTPBasicAuth(
+        consumer_key, consumer_secret))
+    auth = json.loads(r.text)
+    token = auth['access_token']
+    return HttpResponse(token)
+
+
+@csrf_exempt
+def lipa_na_mpesa_online(request,phone,amount):
+    """
+    Initiate stk push to client. Pass phone number of the client and amount to be billed as parameters.
+    Will be called by any the other fucntion that requires to perform a billing and return the data response from safaricom
+    """
+    phone = phone
+    amount = amount
+
+    api_transaction_URL = 'https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest'
+    BusinessShortCode = 174379;
+    LipaNaMpesaPasskey = 'bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919';
+    access_token = MpesaAccessToken(request)
+    data = None
+
+    get_now = datetime.now()
+    payment_time = get_now.strftime("%Y%m%d%H%M%S")
+    to_encode = '{}{}{}'.format(
+        BusinessShortCode, LipaNaMpesaPasskey, payment_time)
+    payment_password = (b64encode(to_encode.encode('ascii'))).decode("utf-8")
+
+    if access_token:
+        headers = {"Authorization": "Bearer %s" % access_token}
+        request = {
+            "BusinessShortCode": BusinessShortCode,
+            "Password": payment_password,
+              "Timestamp": payment_time,
+              "TransactionType": "CustomerPayBillOnline",
+              "Amount": amount,
+              "PartyA": phone,
+              "PartyB": BusinessShortCode,
+              "PhoneNumber": phone,
+              "CallBackURL": ' https://7c05cde2.ngrok.io.io/stkconfirm/',
+              "AccountReference": "ebook",
+              "TransactionDesc": 'payment'
+        }
+        response = requests.post(
+            api_transaction_URL, json=request, headers=headers)
+        # somedata = response[i]
+        # data2 = response[i]
+        # Stk.objects.create(field =somedata, field2=data2)
+        data = response.text
+
+    else:
+        print('access token failed')
+
+    return data
+
+
+@csrf_exempt
+@require_POST
+def stkconfirm(request):
+    if request.method == "POST":
+        mpesa_body =request.body.decode('utf-8')
+        mpesa_payment = json.loads(mpesa_body)
+
+
+        get_data = mpesa_payment['Body']['stkCallback']
+        get_success_data = get_data['CallbackMetadata']
+
+        if get_data:
+            MerchantRequestID = get_data[
+                'MerchantRequestID']
+            CheckoutRequestID = get_data[
+                'CheckoutRequestID']
+            ResultCode = get_data['ResultCode']
+            ResultDesc = get_data['ResultDesc']
+
+            if get_success_data:
+                get_items = get_success_data['Item']
+                for i in get_items:
+                    if i['Name'] == 'Amount':
+                        Amount = i.get('Value')
+                    elif i['Name'] == 'MpesaReceiptNumber':
+                        MpesaReceiptNumber = i.get('Value')
+                    elif i['Name'] == 'PhoneNumber':
+                        PhoneNumber = i.get('Value')
+                    elif i['Name'] == 'Balance':
+                        Balance = i.get('Value')
+                    elif i['Name'] == 'TransactionDate':
+                        TransactionDate = i.get('Value')
+                    else:
+                        continue
+
+            else:
+                Amount = None
+                MpesaReceiptNumber = None
+                PhoneNumber = None
+                Balance = None
+                TransactionDate = None
+
+            stk_response = Stk.objects.create(MerchantRequestID=MerchantRequestID, CheckoutRequestID=CheckoutRequestID, \
+                                              ResultCode=ResultCode, ResultDesc=ResultDesc, Amount=Amount,
+                                              MpesaReceiptNumber=MpesaReceiptNumber, \
+                                              PhoneNumber=PhoneNumber, Balance=Balance, TransactionDate=TransactionDate)
+
+        print(mpesa_payment)
+
+
+        context = {
+            "ResultCode": 0,
+            "ResultDesc": "Accepted"
+        }
+        return JsonResponse(dict(context))
+
 
 
 def create_ref_code():
@@ -27,24 +160,6 @@ def products(request):
     }
     return render(request, "products.html", context)
 
-def novels(request):
-    context = {
-        'novels' : Novels.objects.all()
-
-    }
-    return render(request,"novel-detail.html", context)
-
-def stationeries(request):
-    context = {
-        'stationeries': Stationery.objects.all()
-    }
-    return render(request,"stationery-detail.html")
-    
-def sciences(request):
-    context={
-        'sciences' : Sciences.objects.all()
-    }
-    return render(request,'science.html')
 
 
 
@@ -91,305 +206,38 @@ class CheckoutView(View):
             messages.info(self.request, "You do not have an active order")
             return redirect("core:checkout")
 
-    def post(self, *args, **kwargs):
-        form = CheckoutForm(self.request.POST or None)
-        try:
-            order = Order.objects.get(user=self.request.user, ordered=False)
-            if form.is_valid():
-
-                use_default_shipping = form.cleaned_data.get(
-                    'use_default_shipping')
-                if use_default_shipping:
-                    print("Using the defualt shipping address")
-                    address_qs = Address.objects.filter(
-                        user=self.request.user,
-                        address_type='S',
-                        default=True
-                    )
-                    if address_qs.exists():
-                        shipping_address = address_qs[0]
-                        order.shipping_address = shipping_address
-                        order.save()
-                    else:
-                        messages.info(
-                            self.request, "No default shipping address available")
-                        return redirect('core:checkout')
-                else:
-                    print("User is entering a new shipping address")
-                    shipping_address1 = form.cleaned_data.get(
-                        'shipping_address')
-                    shipping_address2 = form.cleaned_data.get(
-                        'shipping_address2')
-                    shipping_country = form.cleaned_data.get(
-                        'shipping_country')
-                    shipping_zip = form.cleaned_data.get('shipping_zip')
-
-                    if is_valid_form([shipping_address1, shipping_country, shipping_zip]):
-                        shipping_address = Address(
-                            user=self.request.user,
-                            street_address=shipping_address1,
-                            apartment_address=shipping_address2,
-                            country=shipping_country,
-                            zip=shipping_zip,
-                            address_type='S'
-                        )
-                        shipping_address.save()
-
-                        order.shipping_address = shipping_address
-                        order.save()
-
-                        set_default_shipping = form.cleaned_data.get(
-                            'set_default_shipping')
-                        if set_default_shipping:
-                            shipping_address.default = True
-                            shipping_address.save()
-
-                    else:
-                        messages.info(
-                            self.request, "Please fill in the required shipping address fields")
-
-                use_default_billing = form.cleaned_data.get(
-                    'use_default_billing')
-                same_billing_address = form.cleaned_data.get(
-                    'same_billing_address')
-
-                if same_billing_address:
-                    billing_address = shipping_address
-                    billing_address.pk = None
-                    billing_address.save()
-                    billing_address.address_type = 'B'
-                    billing_address.save()
-                    order.billing_address = billing_address
-                    order.save()
-
-                elif use_default_billing:
-                    print("Using the defualt billing address")
-                    address_qs = Address.objects.filter(
-                        user=self.request.user,
-                        address_type='B',
-                        default=True
-                    )
-                    if address_qs.exists():
-                        billing_address = address_qs[0]
-                        order.billing_address = billing_address
-                        order.save()
-                    else:
-                        messages.info(
-                            self.request, "No default billing address available")
-                        return redirect('core:checkout')
-                else:
-                    print("User is entering a new billing address")
-                    billing_address1 = form.cleaned_data.get(
-                        'billing_address')
-                    billing_address2 = form.cleaned_data.get(
-                        'billing_address2')
-                    billing_country = form.cleaned_data.get(
-                        'billing_country')
-                    billing_zip = form.cleaned_data.get('billing_zip')
-
-                    if is_valid_form([billing_address1, billing_country, billing_zip]):
-                        billing_address = Address(
-                            user=self.request.user,
-                            street_address=billing_address1,
-                            apartment_address=billing_address2,
-                            country=billing_country,
-                            zip=billing_zip,
-                            address_type='B'
-                        )
-                        billing_address.save()
-
-                        order.billing_address = billing_address
-                        order.save()
-
-                        set_default_billing = form.cleaned_data.get(
-                            'set_default_billing')
-                        if set_default_billing:
-                            billing_address.default = True
-                            billing_address.save()
-
-                    else:
-                        messages.info(
-                            self.request, "Please fill in the required billing address fields")
-
-                payment_option = form.cleaned_data.get('payment_option')
-
-                if payment_option == 'S':
-                    return redirect('core:payment', payment_option='stripe')
-                elif payment_option == 'P':
-                    return redirect('core:payment', payment_option='paypal')
-                else:
-                    messages.warning(
-                        self.request, "Invalid payment option selected")
-                    return redirect('core:checkout')
-        except ObjectDoesNotExist:
-            messages.warning(self.request, "You do not have an active order")
-            return redirect("core:order-summary")
-
-
-class PaymentView(View):
-    def get(self, *args, **kwargs):
-        order = Order.objects.get(user=self.request.user, ordered=False)
-        if order.billing_address:
-            context = {
-                'order': order,
-                'DISPLAY_COUPON_FORM': False
-            }
-            userprofile = self.request.user.userprofile
-            if userprofile.one_click_purchasing:
-                # fetch the users card list
-                cards = stripe.Customer.list_sources(
-                    userprofile.stripe_customer_id,
-                    limit=3,
-                    object='card'
-                )
-                card_list = cards['data']
-                if len(card_list) > 0:
-                    # update the context with the default card
-                    context.update({
-                        'card': card_list[0]
-                    })
-            return render(self.request, "payment.html", context)
-        else:
-            messages.warning(
-                self.request, "You have not added a billing address")
-            return redirect("core:checkout")
-
-    def post(self, *args, **kwargs):
-        order = Order.objects.get(user=self.request.user, ordered=False)
-        form = PaymentForm(self.request.POST)
-        userprofile = UserProfile.objects.get(user=self.request.user)
-        if form.is_valid():
-            token = form.cleaned_data.get('stripeToken')
-            save = form.cleaned_data.get('save')
-            use_default = form.cleaned_data.get('use_default')
-
-            if save:
-                if userprofile.stripe_customer_id != '' and userprofile.stripe_customer_id is not None:
-                    customer = stripe.Customer.retrieve(
-                        userprofile.stripe_customer_id)
-                    customer.sources.create(source=token)
-
-                else:
-                    customer = stripe.Customer.create(
-                        email=self.request.user.email,
-                    )
-                    customer.sources.create(source=token)
-                    userprofile.stripe_customer_id = customer['id']
-                    userprofile.one_click_purchasing = True
-                    userprofile.save()
-
-            amount = int(order.get_total() * 100)
-
-            try:
-
-                if use_default or save:
-                    # charge the customer because we cannot charge the token more than once
-                    charge = stripe.Charge.create(
-                        amount=amount,  # cents
-                        currency="usd",
-                        customer=userprofile.stripe_customer_id
-                    )
-                else:
-                    # charge once off on the token
-                    charge = stripe.Charge.create(
-                        amount=amount,  # cents
-                        currency="usd",
-                        source=token
-                    )
-
-                # create the payment
-                payment = Payment()
-                payment.stripe_charge_id = charge['id']
-                payment.user = self.request.user
-                payment.amount = order.get_total()
-                payment.save()
-
-                # assign the payment to the order
-
-                order_items = order.items.all()
-                order_items.update(ordered=True)
-                for item in order_items:
-                    item.save()
-
-                order.ordered = True
-                order.payment = payment
-                order.ref_code = create_ref_code()
-                order.save()
-
-                messages.success(self.request, "Your order was successful!")
-                return redirect("/")
-
-            except stripe.error.CardError as e:
-                body = e.json_body
-                err = body.get('error', {})
-                messages.warning(self.request, f"{err.get('message')}")
-                return redirect("/")
-
-            except stripe.error.RateLimitError as e:
-                # Too many requests made to the API too quickly
-                messages.warning(self.request, "Rate limit error")
-                return redirect("/")
-
-            except stripe.error.InvalidRequestError as e:
-                # Invalid parameters were supplied to Stripe's API
-                print(e)
-                messages.warning(self.request, "Invalid parameters")
-                return redirect("/")
-
-            except stripe.error.AuthenticationError as e:
-                # Authentication with Stripe's API failed
-                # (maybe you changed API keys recently)
-                messages.warning(self.request, "Not authenticated")
-                return redirect("/")
-
-            except stripe.error.APIConnectionError as e:
-                # Network communication with Stripe failed
-                messages.warning(self.request, "Network error")
-                return redirect("/")
-
-            except stripe.error.StripeError as e:
-                # Display a very generic error to the user, and maybe send
-                # yourself an email
-                messages.warning(
-                    self.request, "Something went wrong. You were not charged. Please try again.")
-                return redirect("/")
-
-            except Exception as e:
-                # send an email to ourselves
-                messages.warning(
-                    self.request, "A serious error occurred. We have been notifed.")
-                return redirect("/")
-
-        messages.warning(self.request, "Invalid data received")
-        return redirect("/payment/stripe/")
-
-
 class HomeView(ListView):
     model = Item
     paginate_by = 10
     template_name = "home.html"
 
 
-class NovelsView(ListView):
-    model = Novels
-    paginate_by = 10
-    template_name = "novels.html"
+def textbooks(request):
+    books = Item.objects.filter(category="TB")
+    return  render(request, "textbooks.html", locals())
 
-class StationeriesView(ListView):
-    model = Stationery
-    paginate_by = 10
-    template_name = "stationeries.html"
+def exercisebooks(request):
+    exbooks = Item.objects.filter(category="EB")
+    return  render(request, "exercisebooks.html", locals())
 
-class SciencesView(ListView):
-    model = Sciences
-    paginate_by = 10
-    template_name = "science.html"
+def pens(request):
+    pens = Item.objects.filter(category="P")
+    return  render(request, "pens.html", locals())
+
+def sports(request):
+    sports = Item.objects.filter(category="SP")
+    return  render(request, "sports.html", locals())
+
+def art(request):
+    arts = Item.objects.filter(category="A")
+    return  render(request, "art.html", locals())
+
+def stationeries(request):
+    stationeries = Item.objects.filter(category="OS")
+    return  render(request, "stationeries.html", locals())
 
 
-class LanguagesView(ListView):
-    model = Languages
-    paginate_by = 10
-    template_name = "languages.html"
+
 
 class OrderSummaryView(LoginRequiredMixin, View):
     def get(self, *args, **kwargs):
@@ -409,24 +257,12 @@ class ItemDetailView(DetailView):
     # model = Novels
     template_name = "product.html"
 
-class NovelDetailView(DetailView):
-    model = Novels
-    template_name = "novel-detail.html"
-
-class StationeryDetailview(DetailView):
-    model = Stationery
-    template_name = "stationery-detail.html"
 
 
 @login_required
 def add_to_cart(request, slug):
     item = get_object_or_404(Item, slug=slug)
-    # novel = get_object_or_404(Novels,slug=slug)
-    # order_novel,created = OrderNovels.objects.get_or_create(
-    #     novel = novel,
-    #     user = request.user,
-    #     ordered = False
-    # )
+
     order_item, created = OrderItem.objects.get_or_create(
         item=item,
         user=request.user,
@@ -457,7 +293,6 @@ def add_to_cart(request, slug):
 @login_required
 def remove_from_cart(request, slug):
     item = get_object_or_404(Item, slug=slug)
-    novel = get_object_or_404(Novels, slug=slug)
     order_qs = Order.objects.filter(
         user=request.user,
         ordered=False
@@ -574,7 +409,115 @@ class RequestRefundView(View):
                 return redirect("core:request-refund")
 
 
+def emailNotification(ref_code):
+    order = Order.objects.get(id=ref_code)
+    subject = 'EBook order'
+    message = 'Dear {},\n\nYou have successfully placed an order.On payment collect your order from our office near you\Your order id is {}.'.format(order.user,order.id)
 
-                # Mpesa Api
-                def getAccessToken(request):
-                    return HttpResponse("Hello World")
+    email_from = settings.EMAIL_HOST_USER
+    recipient_list = ['chepngetichrose2030@gmail.com',]
+    mail_sent = send_mail( subject, message, email_from, recipient_list )
+
+    return mail_sent
+
+
+@csrf_exempt
+def order_pay(request):
+    if request.method == "POST":
+        orderid = request.POST['orderid']
+        order=Order.objects.get(id=orderid)
+        phone='254'+ str(order.phone)
+        amount=1
+        mpesa = lipa_na_mpesa_online(request,phone,amount)
+        print(mpesa)
+        u = User.objects.get(email=request.COOKIES['email'])
+        items = OrderItem.objects.filter(user=u, paid=False)
+        contents = []
+
+        for item in items:
+            content = Item.objects.get(slug=item.slug)
+            contents += [content]
+            Order.objects.create(order=order, contents=Item.objects.get(slug=item.slug), price=item.price,
+                                     quantity=item.quantity)
+        total = total(items)
+        emailNotification(order.id)
+    return render(request, 'order_summary.html', locals())
+
+
+
+
+def checkpay(request):
+    return render(request,'order_snippet.html',{'error':'Payment Received','state':'Payment Success','user':request.COOKIES['email']})
+
+
+
+def search(request):
+    items = Item.objects.filter(~Q(image=''))
+
+    if request.method == 'POST':
+        search = request.POST['search']
+        print(search)
+        items = Item.objects.filter(~Q(image='') & Q(category__icontains=search))
+
+    user = request.user
+    return render(request, 'home.html', {'items': items, 'user': user})
+
+
+def upload_file(request):
+    if request.method == 'POST':
+        first_name = request.POST['first_name']
+        last_name = request.POST['last_name']
+        phone = request.POST['phone']
+        email = request.POST['email']
+        file = request.POST['file']
+
+        upload = ItemList.objects.create(first_name=first_name, last_name=last_name, phone=phone, email=email,
+                                         list_img=file)
+        if upload:
+            message = 'Successfully uploaded your list.'
+        else:
+            message = 'There was an error uploading you list.'
+        return render(request, 'upload.html', {'message': message})
+
+    message = ''
+    return render(request, 'upload.html', {'message': message})
+
+
+def apply(request):
+    message = ''
+    if request.method == 'POST':
+        shopname = request.POST['shopname']
+        description = request.POST['description']
+
+        u = User.objects.get(email=request.COOKIES['email'])
+
+        print(u)
+        check_if_shopowner = ShopApplication.objects.filter(user=u,accept=True)
+        if not check_if_shopowner:
+            application = ShopApplication.objects.create(user=u,shopName=shopname,description=description)
+        else:
+            application = None
+
+        if application:
+            subject = 'EBook order'
+            message = 'Your application has been received and we will get back to you.'
+            email_from = settings.EMAIL_HOST_USER
+            recipient_list = ['chepngetichrose2030@gmail.com', ]
+            # fail_silently = False
+            mail_sent = send_mail(subject, message, email_from, recipient_list)
+            print(mail_sent)
+        else:
+            pass
+
+    else:
+        pass
+
+    return render(request, 'apply.html', {'message': message})
+
+def approveseller(request):
+    applications = ShopApplication.objects.filter(accept=False,cancel=False)
+    return render(request, 'approveseller.html', {'applications':applications})
+
+def approvedshops(request):
+    shops = ShopApplication.objects.filter(accept=True)
+    return render(request, 'approvedshops.html', {'shops':shops})
