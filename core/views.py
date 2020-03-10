@@ -21,7 +21,7 @@ from .models import Item,OrderItem, Order, Address, Coupon, Refund, UserProfile,
 from django.http import HttpResponse, JsonResponse
 from django.db.models import Q
 from django.contrib.auth.models import User
-import re
+
 
 
 import random
@@ -254,7 +254,6 @@ class OrderSummaryView(LoginRequiredMixin, View):
 
 class ItemDetailView(DetailView):
     model = Item
-    # model = Novels
     template_name = "product.html"
 
 
@@ -442,6 +441,7 @@ def order_pay(request):
                                      quantity=item.quantity)
         total = total(items)
         emailNotification(order.id)
+        OrderItem.clear()
     return render(request, 'payment.html', locals())
 
 
@@ -451,18 +451,11 @@ def checkpay(request):
     return render(request,'order_snippet.html',{'error':'Payment Received','state':'Payment Success','user':request.COOKIES['email']})
 
 
-
 def search(request):
-    items = Item.objects.filter(~Q(image=''))
+    query = request.GET.get('q')
+    results = Item.objects.filter(Q(title__icontains=query) | Q(category__icontains=query) | Q(image=""))
 
-    if request.method == 'POST':
-        search = request.POST['search']
-        print(search)
-        items = Item.objects.filter(~Q(image='') & Q(category__icontains=search))
-
-    user = request.user
-    return render(request, 'home.html', {'items': items, 'user': user})
-
+    return render(request, 'home.html', {'results': results})
 
 def upload_file(request):
     if request.method == 'POST':
