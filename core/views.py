@@ -412,7 +412,8 @@ class RequestRefundView(View):
 def emailNotification(ref_code):
     order = Order.objects.get(id=ref_code)
     subject = 'EBook order'
-    message = 'Dear {},\n\nYou have successfully placed an order.On payment collect your order from our office near you\Your order id is {}.'.format(order.user,order.id)
+    message = 'Dear {},\n\nYou have successfully placed an order.' \
+              'On payment collect your order from our office near you\Your order id is {}.'.format(order.user,ref_code)
 
     email_from = settings.EMAIL_HOST_USER
     recipient_list = ['chepngetichrose2030@gmail.com',]
@@ -441,7 +442,7 @@ def order_pay(request):
                                      quantity=item.quantity)
         total = total(items)
         emailNotification(order.id)
-    return render(request, 'order_summary.html', locals())
+    return render(request, 'payment.html', locals())
 
 
 
