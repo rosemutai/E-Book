@@ -20,7 +20,7 @@ django-crispy-forms==1.7.2
 django-debug-toolbar==1.10.1
 django-report-builder==6.3.2
 django-reporting==0.21
-djangorestframework==3.11.0
+djangorestframework==3.11.2
 djangorestframework-jwt==1.11.0
 docutils==0.15.2
 ecdsa==0.15
